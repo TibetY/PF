@@ -13,7 +13,7 @@ function roll(d: number): Keyframe {
     legs: {
       L: footFlat(0.14, 0.375, 0, 6),
       // arch on top of the bottle: ankle sits just behind the contact point
-      R: { plant: { at: [BOTTLE.x, 2 * BOTTLE.r - 0.004, BOTTLE.z + d - 0.0], pivot: 'flat' }, knee: [0, 0.4, 1] },
+      R: { plant: { at: [BOTTLE.x, 2 * BOTTLE.r - 0.008, BOTTLE.z + d - 0.0], pivot: 'flat' }, knee: [0, 0.4, 1] },
     },
     arms: handsOnThighs(),
   }

@@ -18,13 +18,11 @@ export const Props = forwardRef<PropsHandle, { specs: PropSpec[]; scale: number;
   useImperativeHandle(ref, () => ({
     update(rig, s) {
       if (bottle.current) {
-        // rolling without slipping: the bottle travels half as far as the foot
-        const ankle = rig.worldPos(`foot${s}`)
-        if (bottleRest.current === null) bottleRest.current = ankle.z
-        const d = ankle.z - bottleRest.current
-        // under the arch, just in front of the ankle; spins as it rolls
-        bottle.current.position.set(ankle.x, 0.036 * scale, ankle.z + 0.035 * scale - d / 2)
-        bottle.current.rotation.x = d / 2 / (0.036 * scale)
+        // stays under the arch (mid-foot, a little in front of the ankle) and spins as it rolls
+        const arch = rig.pointOn(`foot${s}`, [0, -0.07, 0.07])
+        if (bottleRest.current === null) bottleRest.current = arch.z
+        bottle.current.position.set(arch.x, 0.036 * scale, arch.z)
+        bottle.current.rotation.x = (arch.z - bottleRest.current) / (0.036 * scale)
       }
       if (bandA.current && bandB.current) {
         const o = s === 'L' ? 'R' : 'L'
