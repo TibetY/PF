@@ -25,10 +25,10 @@ export const DIM = {
 }
 
 export type SideKey = 'R' | 'L'
-export type Target = 'fascia' | 'gastrocnemius' | 'soleus' | 'none'
+export type Target = 'fascia' | 'gastrocnemius' | 'soleus' | 'hip' | 'quads' | 'invertors'
 
-const BODY = new THREE.Color('#c9d1d9')
-const JOINT = new THREE.Color('#9aa6b2')
+const BODY = new THREE.Color('#d3d8de')
+const JOINT = new THREE.Color('#a7b1bc')
 const HIGHLIGHT = new THREE.Color('#ff6a3d')
 
 function capsule(radius: number, length: number, mat: THREE.Material) {
@@ -37,21 +37,74 @@ function capsule(radius: number, length: number, mat: THREE.Material) {
   return m
 }
 function sphere(radius: number, mat: THREE.Material) {
-  const m = new THREE.Mesh(new THREE.SphereGeometry(radius, 20, 14), mat)
+  const m = new THREE.Mesh(new THREE.SphereGeometry(radius, 24, 16), mat)
   m.castShadow = true
   return m
 }
-/** Capsule hanging down from the joint along -Y. */
-function limb(radius: number, length: number, mat: THREE.Material) {
-  const m = capsule(radius, Math.max(0.001, length - 2 * radius), mat)
-  m.position.y = -length / 2
+function ellipsoid(sx: number, sy: number, sz: number, mat: THREE.Material) {
+  const m = sphere(1, mat)
+  m.scale.set(sx, sy, sz)
   return m
 }
+
+/**
+ * Smooth tapered segment hanging from the joint along -Y, with rounded ends.
+ * `radii` are sampled evenly from top to bottom (muscle shape).
+ */
+function taper(len: number, radii: number[], mat: THREE.Material) {
+  const at = (t: number) => {
+    const f = t * (radii.length - 1)
+    const i = Math.min(radii.length - 2, Math.floor(f))
+    const u = f - i
+    const w = 0.5 - 0.5 * Math.cos(Math.PI * u)
+    return radii[i] * (1 - w) + radii[i + 1] * w
+  }
+  const pts: THREE.Vector2[] = []
+  const r0 = radii[0]
+  const rN = radii[radii.length - 1]
+  for (let k = 0; k <= 6; k++) {
+    const a = (Math.PI / 2) * (1 - k / 6)
+    pts.push(new THREE.Vector2(r0 * Math.cos(a), r0 * Math.sin(a) * 0.7))
+  }
+  for (let k = 1; k < 24; k++) {
+    const t = k / 24
+    pts.push(new THREE.Vector2(at(t), -t * len))
+  }
+  for (let k = 0; k <= 6; k++) {
+    const a = (-Math.PI / 2) * (k / 6)
+    pts.push(new THREE.Vector2(rN * Math.cos(a), -len + rN * Math.sin(a) * 0.7))
+  }
+  const m = new THREE.Mesh(new THREE.LatheGeometry(pts, 24), mat)
+  m.castShadow = true
+  return m
+}
+
+/** Thin capsule spanning two points (in the parent's frame). */
+function band(a: THREE.Vector3, b: THREE.Vector3, r: number, mat: THREE.Material) {
+  const d = b.clone().sub(a)
+  const m = capsule(r, Math.max(0.001, d.length()), mat)
+  m.position.copy(a).add(b).multiplyScalar(0.5)
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize())
+  m.castShadow = false
+  return m
+}
+
+/** Toes from the big toe (medial) to the little toe: x offset toward medial, base z, length, radius. */
+const TOES: [number, number, number, number][] = [
+  [0.027, 0.0, 0.036, 0.0135],
+  [0.006, -0.004, 0.031, 0.0095],
+  [-0.011, -0.009, 0.027, 0.009],
+  [-0.025, -0.015, 0.023, 0.0085],
+  [-0.037, -0.023, 0.019, 0.008],
+]
+const MID_JOINT = new THREE.Vector3(0, -0.05, 0.02)
 
 interface Leg {
   hip: THREE.Group
   knee: THREE.Group
   ankle: THREE.Group
+  /** Midfoot (arch) joint: forefoot hinges here. */
+  mid: THREE.Group
   toes: THREE.Group
 }
 interface Arm {
@@ -74,124 +127,158 @@ export class Mannequin {
   neck = new THREE.Group()
   legs: Record<SideKey, Leg>
   arms: Record<SideKey, Arm>
-  private highlightMats: Record<Exclude<Target, 'none'>, THREE.MeshStandardMaterial>
-  private highlightMeshes: Record<Exclude<Target, 'none'>, THREE.Mesh[]> = { fascia: [], gastrocnemius: [], soleus: [] }
+  private eyes: THREE.Mesh[] = []
+  private highlightMats = {} as Record<Target, THREE.MeshStandardMaterial>
+  private highlightMeshes: Record<Target, THREE.Mesh[]> = {
+    fascia: [], gastrocnemius: [], soleus: [], hip: [], quads: [], invertors: [],
+  }
+  /** Meshes that only exist to show a highlighted tissue (hidden when not highlighted). */
+  private overlayOnly = new Set<Target>(['fascia', 'invertors', 'quads', 'hip'])
 
   constructor() {
-    const body = new THREE.MeshStandardMaterial({ color: BODY, roughness: 0.55, metalness: 0.05 })
+    const body = new THREE.MeshStandardMaterial({ color: BODY, roughness: 0.6, metalness: 0.02 })
     const joint = new THREE.MeshStandardMaterial({ color: JOINT, roughness: 0.6 })
-    const mkHL = () =>
-      new THREE.MeshStandardMaterial({
+    const dark = new THREE.MeshStandardMaterial({ color: '#39424c', roughness: 0.4 })
+    for (const k of Object.keys(this.highlightMeshes) as Target[]) {
+      this.highlightMats[k] = new THREE.MeshStandardMaterial({
         color: HIGHLIGHT, emissive: HIGHLIGHT, emissiveIntensity: 0.4, roughness: 0.4,
-        transparent: true, opacity: 0.95,
       })
-    this.highlightMats = { fascia: mkHL(), gastrocnemius: mkHL(), soleus: mkHL() }
+    }
+    const hl = (t: Target, m: THREE.Mesh, side: SideKey) => {
+      // only the affected (right, before mirroring) side carries highlights
+      if (side === 'R') {
+        m.material = this.highlightMats[t]
+        this.highlightMeshes[t].push(m)
+      } else if (this.overlayOnly.has(t)) m.visible = false
+      return m
+    }
 
     this.root.add(this.pelvis)
 
-    // pelvis block
-    const pelvisMesh = capsule(0.1, 0.1, body)
-    pelvisMesh.rotation.z = Math.PI / 2
-    pelvisMesh.scale.set(0.95, 1, 0.75)
+    // pelvis
+    const pelvisMesh = ellipsoid(0.148, 0.1, 0.1, body)
     pelvisMesh.position.y = 0.03
     this.pelvis.add(pelvisMesh)
+    for (const side of ['R', 'L'] as SideKey[]) {
+      const sx = side === 'R' ? -1 : 1
+      // gluteus medius on the side of the hip
+      const glute = ellipsoid(0.035, 0.065, 0.06, body)
+      glute.position.set(sx * 0.15, 0.04, -0.02)
+      this.pelvis.add(hl('hip', glute, side))
+    }
 
     // spine / torso
     this.spine.position.set(0, DIM.spineY, -0.005)
     this.pelvis.add(this.spine)
-    const abdomen = capsule(0.105, 0.12, body)
-    abdomen.scale.set(1.1, 1, 0.8)
-    abdomen.position.y = 0.1
-    this.spine.add(abdomen)
-    const chest = capsule(0.13, 0.16, body)
-    chest.scale.set(1.15, 1, 0.75)
-    chest.position.y = 0.3
-    this.spine.add(chest)
+    const torso = taper(0.47, [0.115, 0.102, 0.11, 0.13, 0.137, 0.118], body)
+    torso.rotation.x = Math.PI
+    torso.scale.set(1.18, 1, 0.72)
+    torso.position.y = -0.02
+    this.spine.add(torso)
 
     this.neck.position.set(0, 0.46, 0)
     this.spine.add(this.neck)
-    const neckMesh = capsule(0.04, 0.05, joint)
-    neckMesh.position.y = 0.03
+    const neckMesh = taper(0.09, [0.042, 0.038], body)
+    neckMesh.rotation.x = Math.PI
     this.neck.add(neckMesh)
-    const head = sphere(0.1, body)
-    head.scale.set(0.9, 1.08, 1)
-    head.position.set(0, 0.14, 0.01)
+    const head = ellipsoid(0.088, 0.108, 0.1, body)
+    head.position.set(0, 0.15, 0.01)
     this.neck.add(head)
-    const nose = sphere(0.022, joint)
-    nose.position.set(0, 0.14, 0.105)
+    const jaw = ellipsoid(0.066, 0.06, 0.07, body)
+    jaw.position.set(0, 0.095, 0.035)
+    this.neck.add(jaw)
+    const nose = ellipsoid(0.013, 0.022, 0.016, body)
+    nose.position.set(0, 0.135, 0.105)
     this.neck.add(nose)
+    for (const sx of [-1, 1]) {
+      const ear = ellipsoid(0.012, 0.024, 0.018, body)
+      ear.position.set(sx * 0.088, 0.145, 0.005)
+      this.neck.add(ear)
+      const eye = sphere(0.011, dark)
+      eye.position.set(sx * 0.033, 0.163, 0.093)
+      eye.castShadow = false
+      this.neck.add(eye)
+      this.eyes.push(eye)
+    }
 
     const mkLeg = (side: SideKey): Leg => {
       const sx = side === 'R' ? -1 : 1
+      const med = -sx // medial direction (towards the midline)
       const hip = new THREE.Group()
       hip.position.set(sx * DIM.hipX, 0, 0)
       this.pelvis.add(hip)
-      hip.add(sphere(0.07, joint))
-      const thigh = limb(0.075, DIM.thigh, body)
-      thigh.scale.set(1, 1, 1.05)
+      hip.add(sphere(0.072, body))
+      const thigh = taper(DIM.thigh, [0.084, 0.08, 0.071, 0.06, 0.054], body)
+      thigh.scale.set(1, 1, 1.06)
       hip.add(thigh)
+      const quad = ellipsoid(0.05, 0.13, 0.035, body)
+      quad.position.set(0, -0.2, 0.05)
+      hip.add(hl('quads', quad, side))
 
       const knee = new THREE.Group()
       knee.position.y = -DIM.thigh
       hip.add(knee)
-      knee.add(sphere(0.058, joint))
-      knee.add(limb(0.052, DIM.shin, body))
+      knee.add(sphere(0.054, joint))
+      const patella = ellipsoid(0.03, 0.035, 0.02, joint)
+      patella.position.set(0, 0.005, 0.045)
+      knee.add(patella)
+      knee.add(taper(DIM.shin, [0.054, 0.05, 0.043, 0.036, 0.031], body))
       // calf muscles on the back of the shin (-Z): gastrocnemius high, soleus lower
-      const gast = capsule(0.042, 0.11, this.highlightMats.gastrocnemius)
-      gast.position.set(0, -0.15, -0.035)
-      gast.scale.set(1.15, 1, 0.9)
-      knee.add(gast)
-      const sol = capsule(0.036, 0.1, this.highlightMats.soleus)
-      sol.position.set(0, -0.29, -0.028)
-      sol.scale.set(1.1, 1, 0.85)
-      knee.add(sol)
-      if (side === 'R') {
-        this.highlightMeshes.gastrocnemius.push(gast)
-        this.highlightMeshes.soleus.push(sol)
-      } else {
-        gast.material = body
-        sol.material = body
-      }
+      const gast = ellipsoid(0.045, 0.09, 0.036, body)
+      gast.position.set(0, -0.14, -0.035)
+      knee.add(hl('gastrocnemius', gast, side))
+      const sol = ellipsoid(0.038, 0.075, 0.028, body)
+      sol.position.set(0, -0.27, -0.025)
+      knee.add(hl('soleus', sol, side))
+      const tibPost = ellipsoid(0.014, 0.085, 0.018, body)
+      tibPost.position.set(med * 0.034, -0.31, -0.008)
+      knee.add(hl('invertors', tibPost, side))
 
       const ankle = new THREE.Group()
       ankle.position.y = -DIM.shin
       knee.add(ankle)
-      ankle.add(sphere(0.042, joint))
-      // foot body: heel to ball
-      const foot = capsule(0.04, 0.13, body)
-      foot.rotation.x = Math.PI / 2
-      foot.scale.set(1.08, 1, 0.78) // (x, length, height) after rotation
-      foot.position.set(0, -0.044, 0.03)
-      ankle.add(foot)
-      const heel = sphere(0.038, body)
-      heel.position.set(0, -0.042, -0.045)
+      ankle.add(sphere(0.034, joint))
+      for (const s of [-1, 1]) {
+        const mall = sphere(0.014, joint)
+        mall.position.set(s * 0.033, -0.005, -0.004)
+        ankle.add(mall)
+      }
+      // rearfoot: heel
+      const heel = ellipsoid(0.034, 0.033, 0.044, body)
+      heel.position.set(0, -0.044, -0.04)
       ankle.add(heel)
-      // plantar fascia: heel to ball along the sole
-      const pf = capsule(0.009, 0.19, this.highlightMats.fascia)
-      pf.rotation.x = Math.PI / 2 - 0.08
-      pf.scale.set(1.8, 1, 1)
-      pf.position.set(0, -0.069, 0.035)
-      ankle.add(pf)
-      if (side === 'R') this.highlightMeshes.fascia.push(pf)
-      else pf.visible = false
+      const rearBody = ellipsoid(0.036, 0.03, 0.045, body)
+      rearBody.position.set(0, -0.04, 0.0)
+      ankle.add(rearBody)
+      ankle.add(hl('fascia', band(new THREE.Vector3(0, -0.071, -0.06), new THREE.Vector3(0, -0.07, MID_JOINT.z), 0.007, body), side))
+
+      // midfoot + forefoot, hinged at the arch
+      const mid = new THREE.Group()
+      mid.position.copy(MID_JOINT)
+      ankle.add(mid)
+      const midBody = ellipsoid(0.039, 0.024, 0.055, body)
+      midBody.position.set(-med * 0.004, 0.006, 0.035)
+      mid.add(midBody)
+      const fore = ellipsoid(0.047, 0.021, 0.042, body)
+      fore.position.set(med * 0.002, 0.0, 0.082)
+      mid.add(fore)
 
       const toes = new THREE.Group()
-      toes.position.set(0, DIM.ballY, DIM.ballZ)
-      ankle.add(toes)
-      const toeMesh = capsule(0.02, 0.035, joint)
-      toeMesh.rotation.x = Math.PI / 2
-      toeMesh.scale.set(1.9, 1, 0.85)
-      toeMesh.position.set(0, -0.004, 0.035)
-      toes.add(toeMesh)
-      const pfToe = capsule(0.009, 0.03, this.highlightMats.fascia)
-      pfToe.rotation.x = Math.PI / 2
-      pfToe.scale.set(2.2, 1, 1)
-      pfToe.position.set(0, -0.016, 0.018)
-      toes.add(pfToe)
-      if (side === 'R') this.highlightMeshes.fascia.push(pfToe)
-      else pfToe.visible = false
+      toes.position.set(0, DIM.ballY - MID_JOINT.y, DIM.ballZ - MID_JOINT.z)
+      mid.add(toes)
+      for (const [x, z0, len, r] of TOES) {
+        const tx = med * x
+        const toe = capsule(r, len, joint)
+        toe.rotation.x = Math.PI / 2
+        toe.scale.set(1, 1, 0.85)
+        toe.position.set(tx, -0.02 + r * 0.85, z0 + len / 2 + r * 0.2)
+        toes.add(toe)
+        // fascia slips: from the heel band, fanning out to each toe
+        mid.add(hl('fascia', band(new THREE.Vector3(0, -0.021, 0.0), new THREE.Vector3(tx * 0.9, -0.022, toes.position.z + z0), 0.0045, body), side))
+        toes.add(hl('fascia', band(new THREE.Vector3(tx, -0.021, z0), new THREE.Vector3(tx, -0.02, z0 + len * 0.55), 0.004, body), side))
+      }
 
-      return { hip, knee, ankle, toes }
+      return { hip, knee, ankle, mid, toes }
     }
 
     const mkArm = (side: SideKey): Arm => {
@@ -199,13 +286,13 @@ export class Mannequin {
       const shoulder = new THREE.Group()
       shoulder.position.set(sx * DIM.shoulderX, DIM.shoulderY, 0)
       this.spine.add(shoulder)
-      shoulder.add(sphere(0.05, joint))
-      shoulder.add(limb(0.045, DIM.upperArm, body))
+      shoulder.add(sphere(0.056, body))
+      shoulder.add(taper(DIM.upperArm, [0.05, 0.046, 0.04, 0.036], body))
       const elbow = new THREE.Group()
       elbow.position.y = -DIM.upperArm
       shoulder.add(elbow)
-      elbow.add(sphere(0.04, joint))
-      elbow.add(limb(0.037, DIM.forearm, body))
+      elbow.add(sphere(0.037, joint))
+      elbow.add(taper(DIM.forearm, [0.04, 0.038, 0.03, 0.026], body))
       const wrist = new THREE.Group()
       wrist.position.y = -DIM.forearm
       elbow.add(wrist)
@@ -228,21 +315,24 @@ export class Mannequin {
 
     this.legs = { R: mkLeg('R'), L: mkLeg('L') }
     this.arms = { R: mkArm('R'), L: mkArm('L') }
-    this.setHighlight('none', 0)
+    this.setHighlight([], 0)
   }
 
-  setHighlight(target: Target, intensity: number) {
-    for (const key of Object.keys(this.highlightMeshes) as Exclude<Target, 'none'>[]) {
-      const on = key === target
+  setHighlight(targets: Target[], intensity: number) {
+    for (const key of Object.keys(this.highlightMeshes) as Target[]) {
+      const on = targets.includes(key)
       const mat = this.highlightMats[key]
       mat.color.copy(on ? HIGHLIGHT : BODY)
       mat.emissive.copy(on ? HIGHLIGHT : BODY)
       mat.emissiveIntensity = on ? 0.15 + 0.85 * intensity : 0
-      this.highlightMeshes[key].forEach((m) => {
-        // the fascia strip only exists visually when highlighted; calf muscles stay as body shape
-        m.visible = on || key !== 'fascia'
-      })
+      const show = on || !this.overlayOnly.has(key)
+      this.highlightMeshes[key].forEach((m) => (m.visible = show))
     }
+  }
+
+  /** 1 = eyes open, 0 = closed. */
+  setEyes(open: number) {
+    this.eyes.forEach((e) => e.scale.set(1, Math.max(0.12, open), 1))
   }
 
   /** Resets every joint to the neutral standing pose. */
@@ -251,9 +341,10 @@ export class Mannequin {
     for (const s of ['R', 'L'] as SideKey[]) {
       const l = this.legs[s]
       const a = this.arms[s]
-      all.push(l.hip, l.knee, l.ankle, l.toes, a.shoulder, a.elbow, a.wrist)
+      all.push(l.hip, l.knee, l.ankle, l.mid, l.toes, a.shoulder, a.elbow, a.wrist)
     }
     all.forEach((g) => g.quaternion.identity())
+    this.setEyes(1)
     this.pelvis.position.set(0, DIM.thigh + DIM.shin + DIM.ankleH, 0)
     this.root.updateMatrixWorld(true)
   }
@@ -380,6 +471,17 @@ export class Mannequin {
   setToes(side: SideKey, extension: number) {
     this.legs[side].toes.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -THREE.MathUtils.degToRad(extension))
     this.legs[side].toes.updateMatrixWorld(true)
+  }
+
+  /** Arch (midfoot) flexion, degrees: + lifts the arch by tipping the forefoot down. */
+  setArch(side: SideKey, deg: number) {
+    this.legs[side].mid.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), THREE.MathUtils.degToRad(deg))
+    this.legs[side].mid.updateMatrixWorld(true)
+  }
+
+  /** Root-space centre of a foot, used to aim the foot close-up camera. */
+  footCenter(side: SideKey, out = new THREE.Vector3()) {
+    return this.pointOn(this.legs[side].mid, new THREE.Vector3(0, -0.01, 0.03), out)
   }
 
   setHand(side: SideKey, q: THREE.Quaternion) {

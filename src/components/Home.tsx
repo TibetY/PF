@@ -14,8 +14,11 @@ export default function Home() {
   const rows = EXERCISES.map((ex) => ({ ex, status: statusFor(log, ex.id, today) }))
 
   const scheduled = rows.filter((r) => r.status.kind === 'daily' || r.status.kind === 'alt-due' || r.status.kind === 'alt-done')
+  const routine = scheduled.filter((r) => r.ex.group === 'routine')
+  const physio = scheduled.filter((r) => r.ex.group === 'physio')
   const restDay = rows.filter((r) => r.status.kind === 'alt-rest')
-  const asNeeded = rows.filter((r) => r.status.kind === 'as-needed')
+  const beforeRun = rows.filter((r) => r.ex.frequency === 'before-run')
+  const asNeeded = rows.filter((r) => r.ex.frequency === 'after-activity')
 
   let done = 0
   let total = 0
@@ -65,30 +68,25 @@ export default function Home() {
 
       <PainPicker date={today} />
 
-      <section className="space-y-3">
-        {scheduled.map(({ ex, status }) => (
-          <ExerciseRow key={ex.id} ex={ex} status={status} />
-        ))}
-      </section>
+      <Group title="Plantar fasciitis routine" rows={routine} />
+      <Group title="Physio program" rows={physio} />
+      <Group title="Before you run" rows={beforeRun} />
+      <Group title="After activity" rows={asNeeded} />
 
-      {asNeeded.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide muted">After activity</h2>
-          {asNeeded.map(({ ex, status }) => (
-            <ExerciseRow key={ex.id} ex={ex} status={status} />
-          ))}
-        </section>
-      )}
-
-      {restDay.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide muted">Not due today</h2>
-          {restDay.map(({ ex, status }) => (
-            <ExerciseRow key={ex.id} ex={ex} status={status} />
-          ))}
-        </section>
-      )}
+      <Group title="Not due today" rows={restDay} />
     </div>
+  )
+}
+
+function Group({ title, rows }: { title: string; rows: { ex: Exercise; status: DueStatus }[] }) {
+  if (rows.length === 0) return null
+  return (
+    <section className="space-y-3">
+      <h2 className="px-1 text-sm font-semibold uppercase tracking-wide muted">{title}</h2>
+      {rows.map(({ ex, status }) => (
+        <ExerciseRow key={ex.id} ex={ex} status={status} />
+      ))}
+    </section>
   )
 }
 
@@ -158,6 +156,18 @@ function ExerciseGlyph({ id }: { id: string }) {
       return <svg {...p}><path d="M4 17c3 0 6-1 9-1l5-5" /><path d="M18 11l2-4" /><path d="M6 17c1 2 4 2 7 1" /></svg>
     case 'heel-raise':
       return <svg {...p}><path d="M12 3v8" /><path d="M9 6l3-3 3 3" /><path d="M5 21h14M8 21l2-6h6" /></svg>
+    case 'step-down':
+      return <svg {...p}><path d="M3 20h8v-6h10" /><path d="M14 14V5M14 9l-3 4" /></svg>
+    case 'balance-eyes-closed':
+      return <svg {...p}><path d="M12 3v11M12 14l-1 7M12 9l3 4" /><path d="M8 5c1.5 1 6.5 1 8 0" /></svg>
+    case 'side-plank-abduction':
+      return <svg {...p}><path d="M3 20h18M5 17l12-5M17 12l3-6" /></svg>
+    case 'posterior-lunge':
+      return <svg {...p}><path d="M12 3v8l4 4v6M12 11l-6 5-3 2" /></svg>
+    case 'inversion-band':
+      return <svg {...p}><path d="M6 4v10l6 2 5-2" /><path d="M12 16l2 5" strokeDasharray="2 2" /></svg>
+    case 'intrinsic-foot':
+      return <svg {...p}><path d="M3 18h18" /><path d="M5 18c2-6 10-6 14 0" /></svg>
     case 'ice':
       return <svg {...p}><path d="M12 2v20M4 7l16 10M20 7L4 17" /></svg>
     default:

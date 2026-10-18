@@ -7,6 +7,11 @@ import Home from './components/Home'
 import History from './components/History'
 import Info from './components/Info'
 import SettingsPage from './components/SettingsPage'
+import Account from './components/Account'
+import Report from './components/Report'
+import { startCloud } from './lib/cloud'
+
+startCloud()
 import { IconCalendar, IconHome, IconInfo, IconSettings } from './components/Icons'
 
 // the 3D engine is only needed on the exercise screen
@@ -27,10 +32,24 @@ export default function App() {
 
   return (
     <div className="mx-auto flex min-h-full max-w-xl flex-col">
-      <main className="flex-1 px-4 pb-28 pt-[max(1rem,env(safe-area-inset-top))]">
-        {route.name === 'history' ? <History /> : route.name === 'info' ? <Info /> : route.name === 'settings' ? <SettingsPage /> : <Home />}
+      <main className="flex-1 px-4 pb-28 print:pb-0 pt-[max(1rem,env(safe-area-inset-top))]">
+        {route.name === 'history' ? (
+          <History />
+        ) : route.name === 'info' ? (
+          <Info />
+        ) : route.name === 'settings' ? (
+          <SettingsPage />
+        ) : route.name === 'account' ? (
+          <Account />
+        ) : route.name === 'report' ? (
+          <Report />
+        ) : (
+          <Home />
+        )}
       </main>
-      <BottomNav current={route.name} />
+      <div className="print:hidden">
+        <BottomNav current={route.name === 'account' ? 'settings' : route.name === 'report' ? 'history' : route.name} />
+      </div>
     </div>
   )
 }

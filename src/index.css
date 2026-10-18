@@ -43,3 +43,15 @@ body {
 .tabular {
   font-variant-numeric: tabular-nums;
 }
+
+@media print {
+  html.dark {
+    color-scheme: light;
+  }
+  body {
+    background: white !important;
+  }
+  @page {
+    margin: 14mm;
+  }
+}

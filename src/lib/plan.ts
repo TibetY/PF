@@ -28,7 +28,7 @@ export function statusFor(log: SessionLog[], id: ExerciseId, today: string): Due
   const ex = EXERCISES.find((e) => e.id === id)!
   if (ex.frequency === 'daily') return { kind: 'daily', done: countOn(log, id, today), target: ex.perDay! }
   if (ex.frequency === 'every-other-day') return heelRaiseStatus(log, today)
-  return { kind: 'as-needed', done: countOn(log, id, today) }
+  return { kind: 'as-needed', done: countOn(log, id, today) } // after activity / before running
 }
 
 export function isDueNow(s: DueStatus) {

@@ -1,26 +1,54 @@
-export type ExerciseId = 'pf-stretch' | 'calf-straight' | 'calf-bent' | 'heel-raise' | 'ice'
+import type { Target } from '../three/rig'
 
-export type TargetTissue = 'fascia' | 'gastrocnemius' | 'soleus'
+export type ExerciseId =
+  | 'pf-stretch'
+  | 'calf-straight'
+  | 'calf-bent'
+  | 'heel-raise'
+  | 'ice'
+  | 'step-down'
+  | 'balance-eyes-closed'
+  | 'side-plank-abduction'
+  | 'posterior-lunge'
+  | 'inversion-band'
+  | 'intrinsic-foot'
 
-/** Exercise parameters. These come straight from the prescribed routine: do not change them. */
+/**
+ * stretch     timed holds with short rests (original routine)
+ * heel-raise  tempo reps
+ * continuous  one long timed block
+ * hold        timed holds organised in sets (physio strengthening)
+ * reps        self-paced reps: you tap through them, rest between sets is timed
+ */
+export type ExerciseKind = 'stretch' | 'heel-raise' | 'continuous' | 'hold' | 'reps'
+
+/** Exercise parameters. These come straight from the prescriptions: do not change them. */
 export interface Exercise {
   id: ExerciseId
   name: string
   shortName: string
-  kind: 'stretch' | 'heel-raise' | 'continuous'
-  target: TargetTissue
+  group: 'routine' | 'physio'
+  kind: ExerciseKind
+  targets: Target[]
   targetLabel: string
-  /** Stretches: seconds per hold. */
   holdSec?: number
+  /** Physio gave a range: you pick within it (stored per exercise). */
+  holdRange?: [number, number]
   reps?: number
+  repsRange?: [number, number]
   sets?: number
-  /** Heel raises: tempo in seconds. */
   tempo?: { up: number; top: number; down: number }
-  /** Continuous exercises: total seconds. */
   durationSec?: number
-  /** Sessions per day, or null when not scheduled daily. */
+  /** Rest between sets, seconds (default; adjustable). */
+  setRestSec?: number
+  /** False when the physio sheet didn't give a rest, so the default is the app's. */
+  setRestPrescribed?: boolean
+  /** Runs on both legs every time, regardless of the affected-foot setting. */
+  eachLeg?: boolean
+  /** Not tied to a side (e.g. alternating lunges). */
+  unsided?: boolean
   perDay: number | null
-  frequency: 'daily' | 'every-other-day' | 'after-activity'
+  frequency: 'daily' | 'every-other-day' | 'after-activity' | 'before-run'
   dosage: string
   frequencyLabel: string
   steps: string[]
@@ -32,8 +60,9 @@ export const EXERCISES: Exercise[] = [
     id: 'pf-stretch',
     name: 'Plantar fascia stretch',
     shortName: 'Fascia stretch',
+    group: 'routine',
     kind: 'stretch',
-    target: 'fascia',
+    targets: ['fascia'],
     targetLabel: 'Plantar fascia (arch)',
     holdSec: 10,
     reps: 10,
@@ -54,8 +83,9 @@ export const EXERCISES: Exercise[] = [
     id: 'calf-straight',
     name: 'Calf stretch, straight knee',
     shortName: 'Calf (straight knee)',
+    group: 'routine',
     kind: 'stretch',
-    target: 'gastrocnemius',
+    targets: ['gastrocnemius'],
     targetLabel: 'Upper calf (gastrocnemius)',
     holdSec: 30,
     reps: 3,
@@ -76,8 +106,9 @@ export const EXERCISES: Exercise[] = [
     id: 'calf-bent',
     name: 'Calf stretch, bent knee',
     shortName: 'Calf (bent knee)',
+    group: 'routine',
     kind: 'stretch',
-    target: 'soleus',
+    targets: ['soleus'],
     targetLabel: 'Lower calf (soleus)',
     holdSec: 30,
     reps: 3,
@@ -98,12 +129,15 @@ export const EXERCISES: Exercise[] = [
     id: 'heel-raise',
     name: 'High-load heel raises',
     shortName: 'Heel raises',
+    group: 'routine',
     kind: 'heel-raise',
-    target: 'fascia',
+    targets: ['fascia'],
     targetLabel: 'Plantar fascia (loaded via toe extension)',
     reps: 12,
     sets: 3,
     tempo: { up: 3, top: 2, down: 3 },
+    setRestSec: 120,
+    setRestPrescribed: true,
     perDay: 1,
     frequency: 'every-other-day',
     dosage: '3 sets × 12 reps · 3 s up, 2 s hold, 3 s down',
@@ -120,8 +154,9 @@ export const EXERCISES: Exercise[] = [
     id: 'ice',
     name: 'Ice massage',
     shortName: 'Ice massage',
+    group: 'routine',
     kind: 'continuous',
-    target: 'fascia',
+    targets: ['fascia'],
     targetLabel: 'Plantar fascia (arch)',
     durationSec: 10 * 60,
     perDay: null,
@@ -134,6 +169,151 @@ export const EXERCISES: Exercise[] = [
       'Keep it going for the full 10 minutes.',
     ],
     notes: ['Do this after activity.'],
+  },
+
+  // ---- physio program ----
+  {
+    id: 'step-down',
+    name: 'Step down stabilization',
+    shortName: 'Step down',
+    group: 'physio',
+    kind: 'hold',
+    targets: ['hip', 'quads'],
+    targetLabel: 'Hip & knee control (glutes, quads)',
+    holdSec: 10,
+    reps: 3,
+    repsRange: [3, 5],
+    sets: 1,
+    eachLeg: true,
+    perDay: null,
+    frequency: 'before-run',
+    dosage: '1 set × 3–5 reps · 10 s each leg',
+    frequencyLabel: 'Before you run',
+    steps: [
+      'Stand on a step on one leg.',
+      'Bend the standing knee and lower the other foot toward the floor in front of the step, keeping your hips level and knee over your toes.',
+      'Hold steady for 10 seconds, then switch legs.',
+    ],
+    notes: [],
+  },
+  {
+    id: 'balance-eyes-closed',
+    name: '1 leg balance, eyes closed',
+    shortName: 'Balance, eyes closed',
+    group: 'physio',
+    kind: 'hold',
+    targets: ['fascia'],
+    targetLabel: 'Foot & ankle stabilizers',
+    holdSec: 15,
+    holdRange: [15, 60],
+    reps: 1,
+    sets: 4,
+    setRestSec: 15,
+    setRestPrescribed: false,
+    perDay: 1,
+    frequency: 'daily',
+    dosage: '4 sets × 1 rep · 15–60 s',
+    frequencyLabel: 'Once per day',
+    steps: [
+      'Stand on the affected leg near something you can grab if needed.',
+      'Lift the other foot and close your eyes.',
+      'Stay balanced for the whole hold. Build up from 15 s toward 60 s.',
+    ],
+    notes: ['Stand next to a counter or wall for safety.'],
+  },
+  {
+    id: 'side-plank-abduction',
+    name: 'Side plank, knee + abd.',
+    shortName: 'Side plank + abd.',
+    group: 'physio',
+    kind: 'hold',
+    targets: ['hip'],
+    targetLabel: 'Hip abductors (gluteus medius)',
+    holdSec: 10,
+    reps: 5,
+    sets: 3,
+    setRestSec: 60,
+    setRestPrescribed: true,
+    perDay: 1,
+    frequency: 'daily',
+    dosage: '3 sets × 5 reps · hold 10 s',
+    frequencyLabel: 'Once per day',
+    steps: [
+      'Lie on your side, propped on your forearm with the elbow under the shoulder and knees bent.',
+      'Lift your hips so your body is in a straight line from knees to shoulders.',
+      'Lift the top leg up and hold for 10 seconds. Lower and rest briefly.',
+    ],
+    notes: ['The side setting picks the top (lifted) leg.'],
+  },
+  {
+    id: 'posterior-lunge',
+    name: 'Posterior lunge',
+    shortName: 'Posterior lunge',
+    group: 'physio',
+    kind: 'reps',
+    targets: ['quads', 'hip'],
+    targetLabel: 'Quads & glutes (front leg)',
+    reps: 10,
+    sets: 3,
+    setRestSec: 60,
+    setRestPrescribed: true,
+    unsided: true,
+    perDay: 1,
+    frequency: 'daily',
+    dosage: '3 sets × 10 reps',
+    frequencyLabel: 'Once per day',
+    steps: [
+      'Stand tall with your feet together.',
+      'Step one leg back and lower until the back knee is just above the floor.',
+      'Push through the front heel to return to standing. Tap +1 after each rep.',
+    ],
+    notes: ['Go at your own controlled pace; the animation shows the movement, not a required speed.'],
+  },
+  {
+    id: 'inversion-band',
+    name: 'Inversion, elastic, sitting',
+    shortName: 'Inversion (band)',
+    group: 'physio',
+    kind: 'reps',
+    targets: ['invertors'],
+    targetLabel: 'Inverters (tibialis posterior)',
+    reps: 10,
+    sets: 3,
+    setRestSec: 60,
+    setRestPrescribed: true,
+    perDay: 1,
+    frequency: 'daily',
+    dosage: '3 sets × 10 reps',
+    frequencyLabel: 'Once per day',
+    steps: [
+      'Sit with the affected leg crossed over the other knee.',
+      'Loop an elastic band around the forefoot and anchor it under your other foot.',
+      'Turn the sole of your foot in and up against the band, then slowly return. Tap +1 after each rep.',
+    ],
+    notes: [],
+  },
+  {
+    id: 'intrinsic-foot',
+    name: 'Intrinsic foot muscle',
+    shortName: 'Intrinsic foot',
+    group: 'physio',
+    kind: 'reps',
+    targets: ['fascia'],
+    targetLabel: 'Arch muscles (foot intrinsics)',
+    reps: 10,
+    sets: 3,
+    setRestSec: 60,
+    setRestPrescribed: false,
+    perDay: 1,
+    frequency: 'daily',
+    dosage: '3 sets × 10 reps',
+    frequencyLabel: 'Once per day',
+    steps: [
+      'Stand with your hands on a wall for balance.',
+      'Keeping your toes long and flat, draw the ball of your foot toward your heel so the arch lifts ("short foot").',
+      'Relax and repeat. Tap +1 after each rep.',
+    ],
+    notes: [],
   },
 ]
 

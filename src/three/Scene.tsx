@@ -6,7 +6,7 @@ import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import type { Exercise } from '../data/exercises'
 import type { Side } from '../lib/settings'
 import { Mannequin } from './rig'
-import { CAMERAS, LAYOUT, POSES, iceRoll, type PoseInput } from './poses'
+import { CAMERAS, FOOT_CAMS, LAYOUT, POSES, bandPoints, iceRoll, type PoseInput } from './poses'
 
 export interface AnimFrame extends PoseInput {
   /** Highlight glow, 0..1. */
@@ -23,7 +23,12 @@ interface Props {
   dark: boolean
   /** Called every frame to get the current pose parameters (synced to the timer). */
   getFrame: (dt: number) => AnimFrame
+  /** Show the zoomed foot close-up inset. */
+  footCam: boolean
 }
+
+/** Inset rectangle for the foot close-up, in CSS pixels from the canvas' bottom-right. Mirrored by the HTML frame. */
+export const FOOT_CAM_RECT = { right: 10, bottom: 52, maxWidth: 190, widthFrac: 0.42, aspect: 1.15 }
 
 export const ExerciseScene = forwardRef<SceneHandle, Props>(function ExerciseScene(props, ref) {
   const controls = useRef<OrbitControlsImpl>(null)
@@ -111,31 +116,84 @@ function CameraRig({
   return null
 }
 
-function World({ exercise, side, dark, getFrame }: Props) {
+function World({ exercise, side, dark, getFrame, footCam }: Props) {
   const mannequin = useMemo(() => new Mannequin(), [])
   const bottle = useRef<THREE.Group>(null)
+  const bandA = useRef<THREE.Mesh>(null)
+  const bandB = useRef<THREE.Mesh>(null)
   const pose = POSES[exercise.id]
+  const insetCam = useMemo(() => new THREE.PerspectiveCamera(32, 1.15, 0.02, 10), [])
+  const focus = useRef(new THREE.Vector3())
+  const camPos = useRef(new THREE.Vector3())
+  const first = useRef(true)
+  const { gl, scene, camera, size } = useThree()
+
+  useEffect(() => {
+    first.current = true
+  }, [exercise.id, side])
 
   useFrame((_, dt) => {
     const f = getFrame(Math.min(dt, 0.1))
     mannequin.reset()
     pose(mannequin, f)
-    mannequin.setHighlight(exercise.target, f.glow)
+    mannequin.setHighlight(exercise.targets, f.glow)
     if (bottle.current) {
       const r = iceRoll(f.t)
       bottle.current.position.z = LAYOUT.bottle.z + r.bottle
       bottle.current.rotation.x = r.spin
     }
-  })
+    if (bandA.current && bandB.current) {
+      const [lat, med, anchor] = bandPoints(mannequin)
+      placeBand(bandA.current, lat, anchor)
+      placeBand(bandB.current, med, anchor)
+    }
+
+    // ---- render: main view, then the foot close-up inset (manual two-pass render) ----
+    gl.autoClear = true
+    gl.setScissorTest(false)
+    gl.setViewport(0, 0, size.width, size.height)
+    gl.render(scene, camera)
+    const off = FOOT_CAMS[exercise.id]
+    if (!footCam || !off) return
+
+    const target = mannequin.legs.R.mid.localToWorld(new THREE.Vector3(0, -0.015, 0.035))
+    const mx = side === 'left' ? -1 : 1
+    const want = target.clone().add(new THREE.Vector3(off[0] * mx, off[1], off[2]))
+    const k = first.current ? 1 : 1 - Math.exp(-dt * 6)
+    focus.current.lerp(target, k)
+    camPos.current.lerp(want, k)
+    first.current = false
+    insetCam.position.copy(camPos.current)
+    insetCam.lookAt(focus.current)
+
+    const R = FOOT_CAM_RECT
+    const w = Math.min(size.width * R.widthFrac, R.maxWidth)
+    const h = w / R.aspect
+    const x = size.width - w - R.right
+    const y = R.bottom
+    insetCam.aspect = w / h
+    insetCam.updateProjectionMatrix()
+    gl.setScissorTest(true)
+    gl.setScissor(x, y, w, h)
+    gl.setViewport(x, y, w, h)
+    const prev = gl.getClearColor(new THREE.Color())
+    gl.setClearColor(dark ? '#1b242d' : '#ffffff')
+    gl.clear()
+    gl.render(scene, insetCam)
+    gl.setClearColor(prev)
+    gl.setScissorTest(false)
+    gl.setViewport(0, 0, size.width, size.height)
+  }, 1)
 
   const id = exercise.id
-  const seated = id === 'pf-stretch' || id === 'ice'
+  const seated = id === 'pf-stretch' || id === 'ice' || id === 'inversion-band'
   return (
     <group scale={[side === 'left' ? -1 : 1, 1, 1]}>
       <Floor dark={dark} />
       <primitive object={mannequin.root} />
       {seated && <Chair dark={dark} />}
       {(id === 'calf-straight' || id === 'calf-bent') && <Wall z={LAYOUT.wallStretch.wallZ} dark={dark} />}
+      {id === 'intrinsic-foot' && <Wall z={LAYOUT.shortFoot.wallZ} dark={dark} />}
       {id === 'heel-raise' && (
         <>
           <Wall z={LAYOUT.step.wallZ} dark={dark} />
@@ -143,8 +201,58 @@ function World({ exercise, side, dark, getFrame }: Props) {
           <Towel />
         </>
       )}
+      {id === 'step-down' && <StepDownBox dark={dark} />}
+      {id === 'side-plank-abduction' && <Mat dark={dark} />}
       {id === 'ice' && <Bottle ref={bottle} />}
+      {id === 'inversion-band' && (
+        <>
+          <BandStrand ref={bandA} />
+          <BandStrand ref={bandB} />
+        </>
+      )}
     </group>
+  )
+}
+
+function placeBand(mesh: THREE.Mesh, a: THREE.Vector3, b: THREE.Vector3) {
+  const d = b.clone().sub(a)
+  mesh.position.copy(a).add(b).multiplyScalar(0.5)
+  mesh.scale.set(1, d.length(), 1)
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize())
+}
+
+const BandStrand = forwardRef<THREE.Mesh>(function BandStrand(_, ref) {
+  return (
+    <mesh ref={ref} castShadow>
+      <cylinderGeometry args={[0.007, 0.007, 1, 8]} />
+      <meshStandardMaterial color="#d93d3d" roughness={0.5} />
+    </mesh>
+  )
+})
+
+function StepDownBox({ dark }: { dark: boolean }) {
+  const st = LAYOUT.stepDown
+  const depth = st.frontZ - st.backZ
+  return (
+    <group>
+      <mesh position={[0, st.height / 2, st.backZ + depth / 2]} castShadow receiveShadow>
+        <boxGeometry args={[st.width, st.height, depth]} />
+        <meshStandardMaterial color={dark ? '#4a5866' : '#8a9aa8'} roughness={0.8} />
+      </mesh>
+      <mesh position={[0, st.height + 0.003, st.backZ + depth / 2]} receiveShadow>
+        <boxGeometry args={[st.width - 0.02, 0.006, depth - 0.02]} />
+        <meshStandardMaterial color={dark ? '#2b333b' : '#3b4650'} roughness={1} />
+      </mesh>
+    </group>
+  )
+}
+
+function Mat({ dark }: { dark: boolean }) {
+  return (
+    <mesh position={[0.05, 0.004, -0.1]} receiveShadow>
+      <boxGeometry args={[1.9, 0.008, 0.75]} />
+      <meshStandardMaterial color={dark ? '#2f5f62' : '#7cc4c6'} roughness={0.9} />
+    </mesh>
   )
 }
 

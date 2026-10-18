@@ -1,12 +1,21 @@
 import { useState } from 'react'
 import { EXERCISE_BY_ID } from '../data/exercises'
 import { dayCompletion, streak } from '../lib/plan'
-import { dateKey, parseKey, todayKey, useLog } from '../lib/storage'
-import PainChart from './PainChart'
+import { dateKey, parseKey, todayKey, useLog, usePain } from '../lib/storage'
+import { adherenceByDay, correlations, dayRange, painStats } from '../lib/analytics'
+import { go } from '../lib/useHashRoute'
+import { AdherenceBars, CorrelationList, ExerciseHeatmap, PainTrend } from './charts'
+import RangePicker, { rangeStart, type RangeKey } from './RangePicker'
 
 export default function History() {
   const { log, remove } = useLog()
+  const [pain] = usePain()
   const today = todayKey()
+  const [range, setRange] = useState<RangeKey>('30')
+  const days = dayRange(rangeStart(range, today, log, pain), today)
+  const adherence = adherenceByDay(log, days)
+  const stats = painStats(pain, days)
+  const corr = correlations(log, pain, days)
   const [month, setMonth] = useState(() => {
     const d = new Date()
     return new Date(d.getFullYear(), d.getMonth(), 1)
@@ -30,7 +39,12 @@ export default function History() {
 
   return (
     <div className="space-y-5">
-      <h1 className="pt-2 text-2xl font-bold tracking-tight">Progress</h1>
+      <div className="flex items-end justify-between pt-2">
+        <h1 className="text-2xl font-bold tracking-tight">Progress</h1>
+        <button className="btn-primary min-h-[44px] text-sm" onClick={() => go('/report')}>
+          Report
+        </button>
+      </div>
 
       <section className="grid grid-cols-3 gap-3">
         <Stat value={fullStreak} label="Full-routine streak" />
@@ -85,7 +99,49 @@ export default function History() {
         </div>
       </section>
 
-      <PainChart />
+      <RangePicker value={range} onChange={setRange} />
+
+      <section className="card p-4">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h2 className="font-semibold">Morning first-step pain</h2>
+            <p className="text-xs muted">0 = no pain, 10 = worst</p>
+          </div>
+          {stats.firstWeek !== null && stats.lastWeek !== null && days.length >= 14 && (
+            <span className="pill bg-slate-100 py-1 text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+              {Math.abs(stats.lastWeek - stats.firstWeek) < 0.5
+                ? 'About the same'
+                : stats.lastWeek < stats.firstWeek
+                  ? `▼ ${(stats.firstWeek - stats.lastWeek).toFixed(1)} vs first week`
+                  : `▲ ${(stats.lastWeek - stats.firstWeek).toFixed(1)} vs first week`}
+            </span>
+          )}
+        </div>
+        <div className="mt-3">
+          <PainTrend days={days} pain={pain} />
+        </div>
+      </section>
+
+      <section className="card p-4">
+        <h2 className="font-semibold">Routine completed each day</h2>
+        <p className="text-xs muted">Share of that day's prescribed sessions</p>
+        <div className="mt-3">
+          <AdherenceBars data={adherence} />
+        </div>
+      </section>
+
+      <section className="card p-4">
+        <h2 className="font-semibold">What you did</h2>
+        <div className="mt-3">
+          <ExerciseHeatmap log={log} days={days} />
+        </div>
+      </section>
+
+      <section className="card p-4">
+        <h2 className="font-semibold">What's linked with next-morning pain</h2>
+        <p className="mb-3 text-xs muted">Each day's exercise compared with your pain rating the following morning.</p>
+        <CorrelationList items={corr} />
+      </section>
 
       <section className="card p-4">
         <h2 className="font-semibold">Recent sessions</h2>

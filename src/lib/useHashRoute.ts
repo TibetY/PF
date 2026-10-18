@@ -6,6 +6,8 @@ export type Route =
   | { name: 'history' }
   | { name: 'info' }
   | { name: 'settings' }
+  | { name: 'account' }
+  | { name: 'report' }
 
 function parse(hash: string): Route {
   const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean)
@@ -13,6 +15,8 @@ function parse(hash: string): Route {
   if (parts[0] === 'history') return { name: 'history' }
   if (parts[0] === 'info') return { name: 'info' }
   if (parts[0] === 'settings') return { name: 'settings' }
+  if (parts[0] === 'account') return { name: 'account' }
+  if (parts[0] === 'report') return { name: 'report' }
   return { name: 'home' }
 }
 

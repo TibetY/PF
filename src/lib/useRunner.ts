@@ -54,12 +54,14 @@ export function useRunner(phases: Phase[], cb: Callbacks) {
     let guard = 0
     while (s.status === 'running' && guard++ < 1000) {
       const p = phases[s.index]
+      if (p.untimed) break
       const end = s.phaseStart + p.duration * 1000
       if (t < end) break
       enter(s.index + 1, end)
     }
     if (s.status !== 'running') return
     const p = phases[s.index]
+    if (p.untimed) return
     const left = Math.ceil(p.duration - (t - s.phaseStart) / 1000)
     if (left !== s.lastLeft) {
       s.lastLeft = left

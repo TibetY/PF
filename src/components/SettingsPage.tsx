@@ -2,6 +2,9 @@ import { speechSupported, unlockAudio } from '../lib/audio'
 import type { Foot, Theme } from '../lib/settings'
 import { clearAllData, useSettings } from '../lib/storage'
 import Stepper from './Stepper'
+import { go } from '../lib/useHashRoute'
+import { useAuth } from '../lib/cloud'
+import { cloudEnabled } from '../lib/supabase'
 
 const fmtDuration = (sec: number) => (sec >= 60 ? `${Math.floor(sec / 60)} min${sec % 60 ? ` ${sec % 60} s` : ''}` : `${sec} s`)
 
@@ -10,6 +13,8 @@ export default function SettingsPage() {
   return (
     <div className="space-y-5">
       <h1 className="pt-2 text-2xl font-bold tracking-tight">Settings</h1>
+
+      <AccountCard />
 
       <section className="card p-4">
         <h2 className="font-semibold">Affected foot</h2>
@@ -61,12 +66,12 @@ export default function SettingsPage() {
 
       <section className="card p-4">
         <h2 className="font-semibold">Data</h2>
-        <p className="text-sm muted">Everything is stored only on this device, in this browser.</p>
+        <p className="text-sm muted">Everything is saved on this device. When signed in, it's also backed up to your account.</p>
         <button
           className="btn-soft mt-3 w-full text-red-600 dark:text-red-400"
-          onClick={() => window.confirm('Delete all logged sessions, pain ratings and settings?') && clearAllData()}
+          onClick={() => window.confirm('Delete all logged sessions, pain ratings and settings from this device? Your cloud account copy is not deleted.') && clearAllData()}
         >
-          Reset all data
+          Clear data on this device
         </button>
       </section>
     </div>
@@ -106,5 +111,22 @@ function Switch({ label, checked, onChange }: { label: string; checked: boolean;
         <span className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-all ${checked ? 'left-7' : 'left-1'}`} />
       </button>
     </label>
+  )
+}
+
+function AccountCard() {
+  const { session } = useAuth()
+  return (
+    <button onClick={() => go('/account')} className="card flex w-full items-center justify-between gap-3 p-4 text-left">
+      <div className="min-w-0">
+        <p className="font-semibold">Account & sync</p>
+        <p className="truncate text-sm muted">
+          {!cloudEnabled ? 'Offline only · set up Supabase to sync' : session ? `Signed in as ${session.user.email}` : 'Sign in to back up and sync'}
+        </p>
+      </div>
+      <span className="text-2xl muted" aria-hidden>
+        ›
+      </span>
+    </button>
   )
 }
