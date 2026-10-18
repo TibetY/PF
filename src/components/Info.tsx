@@ -32,6 +32,11 @@ export default function Info() {
           healthcare professional if you are unsure.
         </p>
       </section>
+
+      <a href="#/credits" className="card block p-4 font-semibold">
+        Credits & licences <span className="float-right muted">›</span>
+        <span className="mt-1 block text-sm font-normal muted">3D bodies (MakeHuman, CC0), muscle map (Z-Anatomy, CC BY-SA 4.0), lighting (Poly Haven)</span>
+      </a>
     </div>
   )
 }

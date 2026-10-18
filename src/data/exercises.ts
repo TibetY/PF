@@ -1,4 +1,4 @@
-import type { Target } from '../three/rig'
+import type { MuscleId } from '../body/muscles'
 
 export type ExerciseId =
   | 'pf-stretch'
@@ -29,8 +29,12 @@ export interface Exercise {
   shortName: string
   group: 'routine' | 'physio'
   kind: ExerciseKind
-  targets: Target[]
   targetLabel: string
+  /** Muscles worked/stretched most (strong highlight) and supporting muscles (soft highlight). */
+  primary: MuscleId[]
+  secondary: MuscleId[]
+  /** Which side's muscles light up: the working side, or both (alternating/bilateral exercises). */
+  highlightSides: 'working' | 'both'
   holdSec?: number
   /** Physio gave a range: you pick within it (stored per exercise). */
   holdRange?: [number, number]
@@ -62,8 +66,10 @@ export const EXERCISES: Exercise[] = [
     shortName: 'Fascia stretch',
     group: 'routine',
     kind: 'stretch',
-    targets: ['fascia'],
     targetLabel: 'Plantar fascia (arch)',
+    primary: ['foot_flexors'],
+    secondary: ['calves'],
+    highlightSides: 'working',
     holdSec: 10,
     reps: 10,
     sets: 1,
@@ -85,8 +91,10 @@ export const EXERCISES: Exercise[] = [
     shortName: 'Calf (straight knee)',
     group: 'routine',
     kind: 'stretch',
-    targets: ['gastrocnemius'],
     targetLabel: 'Upper calf (gastrocnemius)',
+    primary: ['calves'],
+    secondary: ['soleus', 'foot_flexors'],
+    highlightSides: 'working',
     holdSec: 30,
     reps: 3,
     sets: 1,
@@ -108,8 +116,10 @@ export const EXERCISES: Exercise[] = [
     shortName: 'Calf (bent knee)',
     group: 'routine',
     kind: 'stretch',
-    targets: ['soleus'],
     targetLabel: 'Lower calf (soleus)',
+    primary: ['soleus'],
+    secondary: ['calves', 'foot_flexors'],
+    highlightSides: 'working',
     holdSec: 30,
     reps: 3,
     sets: 1,
@@ -131,8 +141,10 @@ export const EXERCISES: Exercise[] = [
     shortName: 'Heel raises',
     group: 'routine',
     kind: 'heel-raise',
-    targets: ['fascia'],
     targetLabel: 'Plantar fascia (loaded via toe extension)',
+    primary: ['calves', 'soleus'],
+    secondary: ['foot_flexors'],
+    highlightSides: 'working',
     reps: 12,
     sets: 3,
     tempo: { up: 3, top: 2, down: 3 },
@@ -156,8 +168,10 @@ export const EXERCISES: Exercise[] = [
     shortName: 'Ice massage',
     group: 'routine',
     kind: 'continuous',
-    targets: ['fascia'],
     targetLabel: 'Plantar fascia (arch)',
+    primary: ['foot_flexors'],
+    secondary: [],
+    highlightSides: 'working',
     durationSec: 10 * 60,
     perDay: null,
     frequency: 'after-activity',
@@ -178,8 +192,10 @@ export const EXERCISES: Exercise[] = [
     shortName: 'Step down',
     group: 'physio',
     kind: 'hold',
-    targets: ['hip', 'quads'],
     targetLabel: 'Hip & knee control (glutes, quads)',
+    primary: ['quadriceps', 'abductors'],
+    secondary: ['glutes', 'calves'],
+    highlightSides: 'working',
     holdSec: 10,
     reps: 3,
     repsRange: [3, 5],
@@ -202,8 +218,10 @@ export const EXERCISES: Exercise[] = [
     shortName: 'Balance, eyes closed',
     group: 'physio',
     kind: 'hold',
-    targets: ['fascia'],
     targetLabel: 'Foot & ankle stabilizers',
+    primary: ['foot_flexors', 'soleus'],
+    secondary: ['tibialis_anterior', 'abductors'],
+    highlightSides: 'working',
     holdSec: 15,
     holdRange: [15, 60],
     reps: 1,
@@ -227,8 +245,10 @@ export const EXERCISES: Exercise[] = [
     shortName: 'Side plank + abd.',
     group: 'physio',
     kind: 'hold',
-    targets: ['hip'],
     targetLabel: 'Hip abductors (gluteus medius)',
+    primary: ['abductors'],
+    secondary: ['obliques', 'glutes'],
+    highlightSides: 'working',
     holdSec: 10,
     reps: 5,
     sets: 3,
@@ -251,8 +271,10 @@ export const EXERCISES: Exercise[] = [
     shortName: 'Posterior lunge',
     group: 'physio',
     kind: 'reps',
-    targets: ['quads', 'hip'],
     targetLabel: 'Quads & glutes (front leg)',
+    primary: ['quadriceps', 'glutes'],
+    secondary: ['hamstrings', 'adductors', 'hip_flexors', 'calves'],
+    highlightSides: 'both',
     reps: 10,
     sets: 3,
     setRestSec: 60,
@@ -275,8 +297,10 @@ export const EXERCISES: Exercise[] = [
     shortName: 'Inversion (band)',
     group: 'physio',
     kind: 'reps',
-    targets: ['invertors'],
     targetLabel: 'Inverters (tibialis posterior)',
+    primary: ['tibialis_anterior'],
+    secondary: ['soleus'],
+    highlightSides: 'working',
     reps: 10,
     sets: 3,
     setRestSec: 60,
@@ -298,8 +322,10 @@ export const EXERCISES: Exercise[] = [
     shortName: 'Intrinsic foot',
     group: 'physio',
     kind: 'reps',
-    targets: ['fascia'],
     targetLabel: 'Arch muscles (foot intrinsics)',
+    primary: ['foot_flexors'],
+    secondary: ['tibialis_anterior'],
+    highlightSides: 'working',
     reps: 10,
     sets: 3,
     setRestSec: 60,

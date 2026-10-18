@@ -52,6 +52,21 @@ export default function SettingsPage() {
       </section>
 
       <section className="card p-4">
+        <h2 className="font-semibold">3D body</h2>
+        <Segmented<'male' | 'female'>
+          value={s.bodyModel}
+          onChange={(bodyModel) => update({ bodyModel })}
+          options={[
+            { value: 'female', label: 'Female' },
+            { value: 'male', label: 'Male' },
+          ]}
+        />
+        <div className="mt-2 -mx-4 -mb-4 border-t border-slate-100 dark:border-slate-800">
+          <Switch label="Anatomy view (muscle fibres)" checked={s.anatomyView} onChange={(anatomyView) => update({ anatomyView })} />
+        </div>
+      </section>
+
+      <section className="card p-4">
         <h2 className="font-semibold">Appearance</h2>
         <Segmented<Theme>
           value={s.theme}

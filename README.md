@@ -1,7 +1,8 @@
 # Stretcher
 
 A mobile-first guide for a plantar fasciitis exercise routine plus a physio strengthening
-program: animated 3D demonstrations with a foot close-up camera, a phase timer (holds,
+program: a realistic animated male/female 3D body that performs each stretch in step with
+the timer and highlights the muscles it targets, a phase timer (holds,
 reps, sets, 3-2-3 heel-raise tempo, self-paced rep counting), audio/voice cues, a daily
 plan, progress charts and a printable report. Works offline (localStorage), with optional
 Supabase sign-in and sync.
@@ -34,6 +35,19 @@ the browser shows a warning the first time; choose "Advanced → Proceed" (Andro
 or "Show details → visit this website" (iOS/Safari). Plain HTTP works for everything else.
 
 Tip: use "Add to Home Screen" for a full-screen, app-like experience.
+
+## 3D bodies
+
+The bodies in `public/models/` are built from MakeHuman/MPFB in headless Blender, with a
+per-vertex muscle map projected from Z-Anatomy. Rebuild them with one command:
+
+```bash
+bash tools/model/build.sh
+```
+
+See `tools/model/README.md` for details and `tools/model/CREDITS.md` for licences
+(the models are CC BY-SA 4.0 because of the Z-Anatomy muscle data). Poses live in
+`src/stretches/poses/`. Rendered previews of every stretch are in `docs/stretch-previews/`.
 
 ## Cloud sync, sign-in and profiles (Supabase, optional)
 

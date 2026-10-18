@@ -17,8 +17,10 @@ export interface Settings {
   beeps: boolean
   voice: boolean
   theme: Theme
-  /** Show the zoomed foot close-up inset in the 3D view. */
-  footCam: boolean
+  /** Which body the 3D model shows. */
+  bodyModel: 'male' | 'female'
+  /** Muscle-fibre look on the highlighted muscles. */
+  anatomyView: boolean
   /** Per-exercise rest between sets (physio exercises), seconds. */
   setRestById: Record<string, number>
   /** Choices within a prescribed range (reps for step-down, hold for balance). */
@@ -34,7 +36,8 @@ export const DEFAULT_SETTINGS: Settings = {
   beeps: true,
   voice: false,
   theme: 'system',
-  footCam: true,
+  bodyModel: 'female',
+  anatomyView: false,
   setRestById: {},
   choices: {},
 }

@@ -17,7 +17,7 @@ const ex = EXERCISE_BY_ID['calf-straight'] // prep, 3 × 30 s holds, 5 s rests
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date', 'performance'] })
   localStorage.clear()
-  updateSettings({ beeps: true, voice: false, prepSec: 3, stretchRestSec: 5, foot: 'right', theme: 'system', footCam: true })
+  updateSettings({ beeps: true, voice: false, prepSec: 3, stretchRestSec: 5, foot: 'right', theme: 'system', bodyModel: 'female', anatomyView: false })
   vi.clearAllMocks()
 })
 afterEach(() => {
@@ -35,7 +35,7 @@ describe('session engine', () => {
     expect(before.elapsed).toBeCloseTo(10, 0)
 
     for (const patch of [
-      { beeps: false }, { voice: true }, { footCam: false }, { theme: 'dark' as const },
+      { beeps: false }, { voice: true }, { bodyModel: 'male' as const }, { anatomyView: true }, { theme: 'dark' as const },
       { foot: 'both' as const }, { stretchRestSec: 9 }, { setRestSec: 90 }, { prepSec: 20 },
     ]) {
       updateSettings(patch)

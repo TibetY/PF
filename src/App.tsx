@@ -9,6 +9,7 @@ import Info from './components/Info'
 import SettingsPage from './components/SettingsPage'
 import Account from './components/Account'
 import Report from './components/Report'
+import Credits from './components/Credits'
 import { startCloud } from './lib/cloud'
 import { isActive, useSessionStatus } from './lib/session'
 import { useWakeLock } from './lib/useWakeLock'
@@ -19,6 +20,7 @@ import { IconCalendar, IconHome, IconInfo, IconSettings } from './components/Ico
 
 // the 3D engine is only needed on the exercise screen
 const ExerciseSession = lazy(() => import('./components/ExerciseSession'))
+const Preview = lazy(() => import('./components/Preview'))
 
 export default function App() {
   const route = useHashRoute()
@@ -26,6 +28,14 @@ export default function App() {
   const dark = useTheme(settings.theme)
   // the session lives in the engine, so the screen stays awake even off the exercise screen
   const wake = useWakeLock(isActive(useSessionStatus()))
+
+  if (import.meta.env.DEV && window.location.hash.startsWith('#/preview/')) {
+    return (
+      <Suspense fallback={null}>
+        <Preview />
+      </Suspense>
+    )
+  }
 
   if (route.name === 'exercise' && route.id in EXERCISE_BY_ID) {
     return (
@@ -51,6 +61,8 @@ export default function App() {
           <Account />
         ) : route.name === 'report' ? (
           <Report />
+        ) : route.name === 'credits' ? (
+          <Credits />
         ) : (
           <Home />
         )}
@@ -58,7 +70,7 @@ export default function App() {
       <SessionPill />
       <ResumePrompt />
       <div className="print:hidden">
-        <BottomNav current={route.name === 'account' ? 'settings' : route.name === 'report' ? 'history' : route.name} />
+        <BottomNav current={route.name === 'account' ? 'settings' : route.name === 'report' ? 'history' : route.name === 'credits' ? 'info' : route.name} />
       </div>
     </div>
   )

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react'
+import { Suspense, lazy, useCallback, useMemo, useRef } from 'react'
 import { EXERCISE_BY_ID, type Exercise } from '../data/exercises'
 import { speechSupported, unlockAudio } from '../lib/audio'
 import { buildPhases, isWorkPhase, type Phase } from '../lib/phases'
@@ -11,12 +11,12 @@ import {
 import { addSessionLog, todayKey, useLog, useSettings } from '../lib/storage'
 import { statusFor } from '../lib/plan'
 import { go } from '../lib/useHashRoute'
-import { createAnimator } from '../three/animator'
-import { ExerciseScene, FOOT_CAM_RECT, type SceneHandle } from '../three/Scene'
-import { FOOT_CAMS } from '../three/poses'
-import { IconBack, IconCheck, IconMute, IconPause, IconPlay, IconRestart, IconSkip, IconSound, IconView, IconVoice } from './Icons'
+import { IconBack, IconCheck, IconMute, IconPause, IconPlay, IconRestart, IconSkip, IconSound, IconVoice } from './Icons'
 import TempoIndicator from './TempoIndicator'
 import Stepper from './Stepper'
+
+// the 3D body (three.js + the model) loads on demand and never blocks the timer
+const BodyModel = lazy(() => import('../body/BodyModel'))
 
 const fmtClock = (sec: number) => {
   const s = Math.max(0, Math.ceil(sec))
@@ -37,7 +37,6 @@ export default function ExerciseSession({ exercise: ex, dark, wake }: { exercise
   const [settings, updateSettings] = useSettings()
   const { log } = useLog()
   const session = useSession()
-  const sceneRef = useRef<SceneHandle>(null)
 
   // The session engine owns the running session and its phase snapshot. Settings only shape
   // the preview here; they are read once more when you press Start.
@@ -51,18 +50,15 @@ export default function ExerciseSession({ exercise: ex, dark, wake }: { exercise
   const phase: Phase | undefined = phases[live.index]
   const active = isActive(live.status)
 
-  // the 3D figure pulls its pose from the engine every frame
-  const animator = useMemo(() => createAnimator(ex), [ex])
-  const phasesRef = useRef(phases)
-  phasesRef.current = phases
-  const getFrame = useCallback(
-    (dt: number) => {
-      const e = getEngine()
-      const l: LiveState = e.exerciseId === ex.id ? engineLive() : { status: 'idle', index: 0, elapsed: 0 }
-      return animator(dt, l, phasesRef.current)
-    },
-    [animator, ex.id],
-  )
+  // the 3D body reads the engine every frame, so it is always in step with the timer
+  const previewRef = useRef(preview)
+  previewRef.current = preview
+  const timer = useCallback(() => {
+    const e = getEngine()
+    return e.exerciseId === ex.id
+      ? { live: engineLive(), phases: e.phases }
+      : { live: { status: 'idle' as const, index: 0, elapsed: 0 }, phases: previewRef.current }
+  }, [ex.id])
 
   const begin = () => {
     const other = getEngine()
@@ -88,59 +84,19 @@ export default function ExerciseSession({ exercise: ex, dark, wake }: { exercise
       : phases.slice(0, live.index).reduce((a, p) => a + phaseWeight(p), 0) +
         (live.status === 'idle' || !phase ? 0 : phase.untimed ? count * SELF_PACED_REP_SEC : live.elapsed)
   const status = statusFor(log, ex.id, todayKey())
-  const showSides = sides.length > 1 || ex.eachLeg
   const editable = live.status === 'idle' || live.status === 'done'
-  const hasFootCam = FOOT_CAMS[ex.id] !== null
 
   return (
     <div className="mx-auto flex min-h-full max-w-xl flex-col">
       {/* 3D view */}
-      <div className="relative h-[46vh] min-h-[280px] w-full shrink-0 bg-slate-100 dark:bg-slate-900 sm:overflow-hidden sm:rounded-b-3xl">
-        <ExerciseScene ref={sceneRef} exercise={ex} side={sceneSide} dark={dark} getFrame={getFrame} footCam={settings.footCam} />
-        <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-between p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+      <div className="relative h-[50vh] min-h-[300px] w-full shrink-0 bg-slate-100 dark:bg-slate-900 sm:overflow-hidden sm:rounded-b-3xl">
+        <Suspense fallback={null}>
+          <BodyModel exercise={ex} defaultSide={sceneSide} dark={dark} timer={timer} />
+        </Suspense>
+        <div className="pointer-events-none absolute left-0 top-0 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
           <button onClick={leave} className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full bg-white/85 shadow backdrop-blur dark:bg-slate-800/85" aria-label="Back">
             <IconBack />
           </button>
-          <div className="pointer-events-auto flex gap-2">
-            {hasFootCam && <button
-              onClick={() => updateSettings({ footCam: !settings.footCam })}
-              aria-pressed={settings.footCam}
-              className={`flex h-12 items-center rounded-full px-4 text-sm font-semibold shadow backdrop-blur ${
-                settings.footCam ? 'bg-brand-600 text-white dark:bg-brand-500 dark:text-slate-950' : 'bg-white/85 dark:bg-slate-800/85'
-              }`}
-            >
-              Foot cam
-            </button>}
-            <button
-              onClick={() => sceneRef.current?.resetView()}
-              className="flex h-12 items-center gap-1.5 rounded-full bg-white/85 px-4 text-sm font-semibold shadow backdrop-blur dark:bg-slate-800/85"
-              aria-label="Reset view"
-            >
-              <IconView width={20} height={20} /> Reset
-            </button>
-          </div>
-        </div>
-        {settings.footCam && hasFootCam && (
-          <div
-            className="pointer-events-none absolute rounded-xl ring-2 ring-white/90 shadow-lg dark:ring-slate-600"
-            style={{
-              right: FOOT_CAM_RECT.right,
-              bottom: FOOT_CAM_RECT.bottom,
-              width: `min(${FOOT_CAM_RECT.widthFrac * 100}%, ${FOOT_CAM_RECT.maxWidth}px)`,
-              aspectRatio: String(FOOT_CAM_RECT.aspect),
-            }}
-          >
-            <span className="absolute left-1.5 top-1.5 rounded-md bg-slate-900/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">Foot close-up</span>
-          </div>
-        )}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 p-3 text-xs font-semibold">
-          <span className="rounded-full bg-white/85 px-3 py-1.5 shadow backdrop-blur dark:bg-slate-800/85">
-            {ex.unsided ? 'Alternate legs' : `${sceneSide === 'left' ? 'Left' : 'Right'} ${ex.id === 'side-plank-abduction' ? 'leg on top' : ex.eachLeg ? 'leg' : 'foot'}`}
-            {showSides && !ex.eachLeg && <span className="muted"> · {sides.indexOf(sceneSide) + 1} of 2</span>}
-          </span>
-          <span className="flex items-center gap-1.5 truncate rounded-full bg-white/85 px-3 py-1.5 shadow backdrop-blur dark:bg-slate-800/85">
-            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#ff6a3d]" /> <span className="truncate">{ex.targetLabel}</span>
-          </span>
         </div>
       </div>
 
