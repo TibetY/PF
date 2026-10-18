@@ -4,9 +4,10 @@ import type { ExerciseId } from '../data/exercises'
 import { DEFAULT_SETTINGS, type Settings } from './settings'
 import { supabase, type Profile } from './supabase'
 import {
-  dequeue, getState, replaceData, setSyncStatus, subscribe, updateSettings,
+  dequeue, getState, replaceData, setSyncStatus, subscribe,
   type PainLog, type SessionLog, type SyncOp,
 } from './storage'
+import { getSettings, subscribeSettings, updateSettings } from './settingsStore'
 
 /**
  * Offline-first sync. The device's localStorage is what the UI reads; every change is also
@@ -64,9 +65,9 @@ export function startCloud() {
   window.addEventListener('online', () => auth.session && void fullSync())
   // keep profile.settings in step with local settings
   let settingsTimer: number | undefined
-  let lastSettings = JSON.stringify(getState().settings)
-  subscribe(() => {
-    const now = JSON.stringify(getState().settings)
+  let lastSettings = JSON.stringify(getSettings())
+  subscribeSettings(() => {
+    const now = JSON.stringify(getSettings())
     if (now === lastSettings) return
     lastSettings = now
     if (!auth.session || applyingRemoteSettings) return
@@ -168,7 +169,7 @@ async function pullSettings() {
 
 async function pushSettings() {
   if (!supabase || !auth.session) return
-  const s = getState().settings
+  const s = getSettings()
   await supabase.from('profiles').update({ settings: s, affected_foot: s.foot }).eq('id', auth.session.user.id)
 }
 

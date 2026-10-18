@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ExerciseId } from '../data/exercises'
-import { DEFAULT_SETTINGS, type Settings, type Side } from './settings'
+import type { Side } from './settings'
+import { resetSettings } from './settingsStore'
+
+// settings have their own store; re-exported here for existing imports
+export { getSettings, updateSettings, useSettings } from './settingsStore'
 
 export interface SessionLog {
   /** Generated on the device; doubles as the sync key (client_id in Supabase). */
@@ -31,7 +35,7 @@ export interface SyncStatus {
   error: string | null
 }
 
-const KEYS = { settings: 'pf.settings.v1', log: 'pf.log.v1', pain: 'pf.pain.v1', queue: 'pf.syncqueue.v1', lastSync: 'pf.lastsync.v1' }
+const KEYS = { log: 'pf.log.v1', pain: 'pf.pain.v1', queue: 'pf.syncqueue.v1', lastSync: 'pf.lastsync.v1' }
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -53,9 +57,7 @@ function write(key: string, value: unknown) {
 // One tiny shared store so every component sees the same data.
 type Listener = () => void
 const listeners = new Set<Listener>()
-const loadedSettings = read<Partial<Settings>>(KEYS.settings, {})
 let state = {
-  settings: { ...DEFAULT_SETTINGS, ...loadedSettings } as Settings,
   log: read<SessionLog[]>(KEYS.log, []),
   pain: read<PainLog>(KEYS.pain, {}),
   queue: read<SyncOp[]>(KEYS.queue, []),
@@ -87,32 +89,24 @@ function enqueue(op: SyncOp) {
   write(KEYS.queue, state.queue)
 }
 
-export function useSettings(): [Settings, (patch: Partial<Settings>) => void] {
-  const settings = useStore((s) => s.settings)
-  return [settings, updateSettings]
-}
-
-export function updateSettings(patch: Partial<Settings>) {
-  state = { ...state, settings: { ...state.settings, ...patch } }
-  write(KEYS.settings, state.settings)
+/** Log a completed session (usable outside React, e.g. by the session engine). */
+export function addSessionLog(entry: Omit<SessionLog, 'id' | 'ts' | 'date'> & { date?: string }) {
+  const now = Date.now()
+  const full: SessionLog = {
+    id: `${now}-${Math.random().toString(36).slice(2, 10)}`,
+    ts: now,
+    date: entry.date ?? todayKey(),
+    ...entry,
+  } as SessionLog
+  state = { ...state, log: [...state.log, full] }
+  write(KEYS.log, state.log)
+  enqueue({ kind: 'session-upsert', session: full })
   emit()
 }
 
 export function useLog() {
   const log = useStore((s) => s.log)
-  const add = useCallback((entry: Omit<SessionLog, 'id' | 'ts' | 'date'> & { date?: string }) => {
-    const now = Date.now()
-    const full: SessionLog = {
-      id: `${now}-${Math.random().toString(36).slice(2, 10)}`,
-      ts: now,
-      date: entry.date ?? todayKey(),
-      ...entry,
-    } as SessionLog
-    state = { ...state, log: [...state.log, full] }
-    write(KEYS.log, state.log)
-    enqueue({ kind: 'session-upsert', session: full })
-    emit()
-  }, [])
+  const add = useCallback(addSessionLog, [])
   const remove = useCallback((id: string) => {
     state = { ...state, log: state.log.filter((e) => e.id !== id) }
     write(KEYS.log, state.log)
@@ -160,8 +154,9 @@ export function replaceData(log: SessionLog[], pain: PainLog) {
 
 /** Clears this device only; a signed-in account keeps its cloud copy. */
 export function clearAllData() {
-  state = { ...state, settings: { ...DEFAULT_SETTINGS }, log: [], pain: {}, queue: [] }
-  ;[KEYS.settings, KEYS.log, KEYS.pain, KEYS.queue].forEach((k) => {
+  state = { ...state, log: [], pain: {}, queue: [] }
+  resetSettings()
+  ;[KEYS.log, KEYS.pain, KEYS.queue].forEach((k) => {
     try {
       localStorage.removeItem(k)
     } catch {

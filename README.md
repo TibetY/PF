@@ -1,4 +1,4 @@
-# Heel Routine
+# Stretcher
 
 A mobile-first guide for a plantar fasciitis exercise routine plus a physio strengthening
 program: animated 3D demonstrations with a foot close-up camera, a phase timer (holds,
@@ -66,6 +66,12 @@ days, and it shows patterns, not causes.
 **Report** builds a printable summary for any period (2 weeks to all time): pain change,
 adherence per exercise against its prescription, the strongest links, and your profile
 notes. Use **Print / PDF** to save or share it, or **CSV** for the raw data.
+
+## Tests
+
+```bash
+npm test   # Vitest: session engine (settings never reset a session, live cues, save/resume, 30-min expiry)
+```
 
 ## Build
 

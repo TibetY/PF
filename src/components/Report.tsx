@@ -55,7 +55,7 @@ export default function Report() {
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
     const a = document.createElement('a')
     a.href = url
-    a.download = `heel-routine-${days[0]}-to-${today}.csv`
+    a.download = `stretcher-${days[0]}-to-${today}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -149,7 +149,7 @@ export default function Report() {
       </Card>
 
       <p className="text-xs muted">
-        Generated {new Date().toLocaleString()} by Heel Routine. Not medical advice. Correlations show patterns, not causes.
+        Generated {new Date().toLocaleString()} by Stretcher. Not medical advice. Correlations show patterns, not causes.
       </p>
     </div>
   )

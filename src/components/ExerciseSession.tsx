@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Exercise } from '../data/exercises'
-import { beeps, speak, speechSupported, unlockAudio } from '../lib/audio'
+import { useCallback, useMemo, useRef } from 'react'
+import { EXERCISE_BY_ID, type Exercise } from '../data/exercises'
+import { speechSupported, unlockAudio } from '../lib/audio'
 import { buildPhases, isWorkPhase, type Phase } from '../lib/phases'
 import { exerciseSides, holdFor, repsFor, setRestFor } from '../lib/settings'
-import { todayKey, useLog, useSettings } from '../lib/storage'
+import { getSettings } from '../lib/settingsStore'
+import {
+  end as endSession, getEngine, isActive, live as engineLive, pause as pauseSession, resume as resumeSession,
+  skip as skipSession, start as startSession, tapRep, useSession, type LiveState,
+} from '../lib/session'
+import { addSessionLog, todayKey, useLog, useSettings } from '../lib/storage'
 import { statusFor } from '../lib/plan'
 import { go } from '../lib/useHashRoute'
-import { useRunner } from '../lib/useRunner'
-import { useWakeLock } from '../lib/useWakeLock'
 import { createAnimator } from '../three/animator'
 import { ExerciseScene, FOOT_CAM_RECT, type SceneHandle } from '../three/Scene'
 import { FOOT_CAMS } from '../three/poses'
@@ -30,78 +33,51 @@ export const fmtDuration = (sec: number) => (sec >= 60 ? `${Math.floor(sec / 60)
 const SELF_PACED_REP_SEC = 4
 const phaseWeight = (p: Phase) => (p.untimed ? p.reps * SELF_PACED_REP_SEC : p.duration)
 
-export default function ExerciseSession({ exercise: ex, dark }: { exercise: Exercise; dark: boolean }) {
+export default function ExerciseSession({ exercise: ex, dark, wake }: { exercise: Exercise; dark: boolean; wake: { supported: boolean; locked: boolean } }) {
   const [settings, updateSettings] = useSettings()
-  const { log, add } = useLog()
-  const sides = exerciseSides(ex, settings.foot)
-  const phases = useMemo(() => buildPhases(ex, settings), [ex, settings])
-  const [logged, setLogged] = useState(false)
-  const [count, setCount] = useState(0)
+  const { log } = useLog()
+  const session = useSession()
   const sceneRef = useRef<SceneHandle>(null)
 
-  const settingsRef = useRef(settings)
-  settingsRef.current = settings
-
-  const runner = useRunner(phases, {
-    onPhaseStart: (p) => {
-      setCount(0)
-      const s = settingsRef.current
-      if (s.beeps) (isWorkPhase(p.kind) ? beeps.work : beeps.rest)()
-      if (s.voice) speak(p.cue)
-    },
-    onCountdown: (_left, p) => {
-      if (settingsRef.current.beeps && !(p.kind === 'up' || p.kind === 'top' || p.kind === 'down')) beeps.tick()
-    },
-    onDone: () => {
-      const s = settingsRef.current
-      if (s.beeps) beeps.done()
-      if (s.voice) speak('Session complete. Nice work.')
-      add({ exerciseId: ex.id, sides: ex.eachLeg ? ['right', 'left'] : exerciseSides(ex, s.foot) })
-      setLogged(true)
-    },
-  })
-
-  const live = runner.live()
+  // The session engine owns the running session and its phase snapshot. Settings only shape
+  // the preview here; they are read once more when you press Start.
+  const mine = session.exerciseId === ex.id
+  const preview = useMemo(() => buildPhases(ex, settings), [ex, settings])
+  const phases = mine ? session.phases : preview
+  const live: LiveState = mine ? session.live : { status: 'idle', index: 0, elapsed: 0 }
+  const sides = mine ? Array.from(new Set(phases.map((p) => p.side))) : exerciseSides(ex, settings.foot)
+  const count = mine ? session.count : 0
+  const logged = mine && session.logged
   const phase: Phase | undefined = phases[live.index]
-  const active = live.status === 'running' || live.status === 'paused'
-  const wake = useWakeLock(active)
+  const active = isActive(live.status)
 
-  // the 3D figure pulls its pose from the timer every frame
+  // the 3D figure pulls its pose from the engine every frame
   const animator = useMemo(() => createAnimator(ex), [ex])
-  const liveRef = useRef(runner.live)
-  liveRef.current = runner.live
   const phasesRef = useRef(phases)
   phasesRef.current = phases
-  const getFrame = useCallback((dt: number) => animator(dt, liveRef.current(), phasesRef.current), [animator])
+  const getFrame = useCallback(
+    (dt: number) => {
+      const e = getEngine()
+      const l: LiveState = e.exerciseId === ex.id ? engineLive() : { status: 'idle', index: 0, elapsed: 0 }
+      return animator(dt, l, phasesRef.current)
+    },
+    [animator, ex.id],
+  )
 
-  useEffect(() => () => window.speechSynthesis?.cancel(), [])
-
-  const start = () => {
+  const begin = () => {
+    const other = getEngine()
+    if (other.exerciseId && other.exerciseId !== ex.id && isActive(other.status)) {
+      if (!window.confirm(`End your ${EXERCISE_BY_ID[other.exerciseId].name} session and start this one?`)) return
+    }
     unlockAudio()
-    setLogged(false)
-    runner.start()
-  }
-  const restart = () => {
-    unlockAudio()
-    setLogged(false)
-    runner.reset()
-    runner.start()
+    startSession(ex.id, buildPhases(ex, getSettings()))
   }
   const leave = () => {
-    if (active && !window.confirm('Leave this exercise? Your progress in this session will be lost.')) return
-    runner.reset()
+    // a running session keeps going in the background; a finished one is cleared
+    if (mine && live.status === 'done') endSession()
     go('/')
   }
-
-  // self-paced reps: tap +1; the set ends automatically at the target
-  const tapRep = () => {
-    if (!phase?.untimed || live.status !== 'running') return
-    const next = count + 1
-    setCount(next)
-    if (settings.voice) speak(String(next))
-    else if (settings.beeps) beeps.tick()
-    if (next >= phase.reps) window.setTimeout(() => runner.skip(), 450)
-  }
+  const runner = { pause: pauseSession, resume: resumeSession, skip: skipSession }
 
   const remaining = phase && live.status !== 'idle' && !phase.untimed ? phase.duration - live.elapsed : 0
   const sceneSide = live.status === 'idle' ? (ex.eachLeg ? 'right' : sides[0]) : phase?.side ?? sides[0]
@@ -228,7 +204,7 @@ export default function ExerciseSession({ exercise: ex, dark }: { exercise: Exer
         )}
         <section className="grid grid-cols-4 gap-2">
           {editable ? (
-            <button className="btn-primary col-span-4 min-h-[60px] text-lg" onClick={live.status === 'done' ? restart : start}>
+            <button className="btn-primary col-span-4 min-h-[60px] text-lg" onClick={begin}>
               <IconPlay /> {live.status === 'done' ? 'Do another session' : 'Start'}
             </button>
           ) : (
@@ -242,7 +218,7 @@ export default function ExerciseSession({ exercise: ex, dark }: { exercise: Exer
               <button className="btn-soft min-h-[60px] flex-col gap-0 text-xs" onClick={runner.skip} aria-label="Skip phase">
                 <IconSkip /> Skip
               </button>
-              <button className="btn-soft min-h-[60px] flex-col gap-0 text-xs" onClick={restart} aria-label="Restart">
+              <button className="btn-soft min-h-[60px] flex-col gap-0 text-xs" onClick={begin} aria-label="Restart">
                 <IconRestart /> Restart
               </button>
             </>
@@ -290,7 +266,7 @@ export default function ExerciseSession({ exercise: ex, dark }: { exercise: Exer
           <button
             className="btn-soft w-full text-sm"
             onClick={() => {
-              add({ exerciseId: ex.id, sides: ex.eachLeg ? ['right', 'left'] : sides, manual: true })
+              addSessionLog({ exerciseId: ex.id, sides: ex.eachLeg ? ['right', 'left'] : sides, manual: true })
               go('/')
             }}
           >
@@ -298,7 +274,7 @@ export default function ExerciseSession({ exercise: ex, dark }: { exercise: Exer
           </button>
         )}
         {live.status === 'done' && (
-          <button className="btn-soft w-full" onClick={() => go('/')}>
+          <button className="btn-soft w-full" onClick={leave}>
             Back to today
           </button>
         )}

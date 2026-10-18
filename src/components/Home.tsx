@@ -38,7 +38,9 @@ export default function Home() {
     <div className="space-y-5">
       <header className="flex items-end justify-between pt-2">
         <div>
-          <p className="muted text-sm">{fmtDay(today)}</p>
+          <p className="text-sm muted">
+            <span className="font-semibold text-brand-700 dark:text-brand-300">Stretcher</span> · {fmtDay(today)}
+          </p>
           <h1 className="text-2xl font-bold tracking-tight">Today's routine</h1>
         </div>
         <button onClick={() => go('/settings')} className="pill bg-brand-50 py-1.5 text-brand-700 dark:bg-brand-900/40 dark:text-brand-200">

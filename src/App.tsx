@@ -10,6 +10,9 @@ import SettingsPage from './components/SettingsPage'
 import Account from './components/Account'
 import Report from './components/Report'
 import { startCloud } from './lib/cloud'
+import { isActive, useSessionStatus } from './lib/session'
+import { useWakeLock } from './lib/useWakeLock'
+import { ResumePrompt, SessionPill } from './components/SessionBanners'
 
 startCloud()
 import { IconCalendar, IconHome, IconInfo, IconSettings } from './components/Icons'
@@ -21,12 +24,17 @@ export default function App() {
   const route = useHashRoute()
   const [settings] = useSettings()
   const dark = useTheme(settings.theme)
+  // the session lives in the engine, so the screen stays awake even off the exercise screen
+  const wake = useWakeLock(isActive(useSessionStatus()))
 
   if (route.name === 'exercise' && route.id in EXERCISE_BY_ID) {
     return (
-      <Suspense fallback={<div className="flex h-full items-center justify-center muted">Loading…</div>}>
-        <ExerciseSession key={route.id} exercise={EXERCISE_BY_ID[route.id as ExerciseId]} dark={dark} />
-      </Suspense>
+      <>
+        <Suspense fallback={<div className="flex h-full items-center justify-center muted">Loading…</div>}>
+          <ExerciseSession key={route.id} exercise={EXERCISE_BY_ID[route.id as ExerciseId]} dark={dark} wake={wake} />
+        </Suspense>
+        <ResumePrompt />
+      </>
     )
   }
 
@@ -47,6 +55,8 @@ export default function App() {
           <Home />
         )}
       </main>
+      <SessionPill />
+      <ResumePrompt />
       <div className="print:hidden">
         <BottomNav current={route.name === 'account' ? 'settings' : route.name === 'report' ? 'history' : route.name} />
       </div>

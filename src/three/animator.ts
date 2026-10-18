@@ -1,6 +1,6 @@
 import type { Exercise, ExerciseId } from '../data/exercises'
 import type { Phase } from '../lib/phases'
-import type { LiveState } from '../lib/useRunner'
+import type { LiveState } from '../lib/session'
 import type { AnimFrame } from './Scene'
 import { ICE_PERIOD } from './poses'
 
